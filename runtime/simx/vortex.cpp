@@ -42,7 +42,7 @@ public:
         , processor_(arch_)
         , global_mem_(ALLOC_BASE_ADDR, GLOBAL_MEM_SIZE - ALLOC_BASE_ADDR, MEM_PAGE_SIZE, CACHE_BLOCK_SIZE)
 #ifdef VM_ENABLE
-        , vm_manager(processor_, global_mem_, ram_)
+        , vm_manager(this)
 #endif
     {
         // attach memory module
@@ -50,7 +50,7 @@ public:
 #ifdef VM_ENABLE
 	std::cout << "*** VM ENABLED!! ***"<< std::endl;
         // CHECK_ERR(init_VM(), );
-        vm_manager.init_VM();
+        vm_manager.init_VM();)
 #endif
     }
 
@@ -130,20 +130,24 @@ public:
 #ifdef VM_ENABLE
     // VM address translation
     // phy_to_virt_map(asize, dev_addr, flags);
-    vm_manager.phy_to_virt_map(asize, dev_addr, flags);
+    vm_manager.phys_to_virt_map(dev_addr, asize, &addr, flags);
 #endif
     return 0;
   }
 
   int mem_reserve(uint64_t dev_addr, uint64_t size, int flags)
   {
+    uint64_t pAddr = dev_addr;
+#ifdef VM_ENABLE
+    pAddr = vm_manager.virt_to_phys_map(dev_addr);
+#endif
     uint64_t asize = aligned_size(size, MEM_PAGE_SIZE);
-    CHECK_ERR(global_mem_.reserve(dev_addr, asize), {
+    CHECK_ERR(global_mem_.reserve(pAddr, asize), {
       return err;
     });
-    DBGPRINT("[RT:mem_reserve] addr: 0x%lx, asize:0x%lx, size: 0x%lx\n", dev_addr, asize, size);
-    CHECK_ERR(this->mem_access(dev_addr, asize, flags), {
-      global_mem_.release(dev_addr);
+    DBGPRINT("[RT:mem_reserve] addr: 0x%lx, asize:0x%lx, size: 0x%lx\n", pAddr, asize, size);
+    CHECK_ERR(this->mem_access(pAddr, asize, flags), {
+      global_mem_.release(pAddr);
       return err;
     });
     return 0;
@@ -151,21 +155,24 @@ public:
 
   int mem_free(uint64_t dev_addr)
   {
+    uint64_t pAddr = dev_addr;
 #ifdef VM_ENABLE
-    uint64_t paddr = vm_manager.page_table_walk(dev_addr);
-    return global_mem_.release(paddr);
-#else
-    return global_mem_.release(dev_addr);
+    pAddr = vm_manager.virt_to_phys_map(dev_addr);
 #endif
+    return global_mem_.release(pAddr);
   }
 
   int mem_access(uint64_t dev_addr, uint64_t size, int flags)
   {
+    uint64_t pAddr = dev_addr;
+#ifdef VM_ENABLE
+    pAddr = vm_manager.virt_to_phys_map(dev_addr);
+#endif    
     uint64_t asize = aligned_size(size, CACHE_BLOCK_SIZE);
-    if (dev_addr + asize > GLOBAL_MEM_SIZE)
+    if (pAddr + asize > GLOBAL_MEM_SIZE)
       return -1;
 
-    ram_.set_acl(dev_addr, size, flags);
+    ram_.set_acl(pAddr, size, flags);
     return 0;
   }
 
@@ -183,11 +190,11 @@ public:
     uint64_t asize = aligned_size(size, CACHE_BLOCK_SIZE);
     if (dest_addr + asize > GLOBAL_MEM_SIZE)
       return -1;
-#ifdef VM_ENABLE
-    uint64_t pAddr = vm_manager.page_table_walk(dest_addr);
-    DBGPRINT("  [RT:upload] Upload data to vAddr = 0x%lx (pAddr=0x%lx)\n", dest_addr, pAddr);
-    dest_addr = pAddr; //Overwirte
-#endif
+// #ifdef VM_ENABLE
+//     uint64_t pAddr = vm_manager.virt_to_phys_map(dest_addr);
+//     DBGPRINT("  [RT:upload] Upload data to vAddr = 0x%lx (pAddr=0x%lx)\n", dest_addr, pAddr);
+//     dest_addr = pAddr; //Overwirte
+// #endif
 
     ram_.enable_acl(false);
     ram_.write((const uint8_t *)src, dest_addr, size);
@@ -207,11 +214,11 @@ public:
     uint64_t asize = aligned_size(size, CACHE_BLOCK_SIZE);
     if (src_addr + asize > GLOBAL_MEM_SIZE)
       return -1;
-#ifdef VM_ENABLE
-    uint64_t pAddr = vm_manager.page_table_walk(src_addr);
-    DBGPRINT("  [RT:download] Download data to vAddr = 0x%lx (pAddr=0x%lx)\n", src_addr, pAddr);
-    src_addr = pAddr; //Overwirte
-#endif
+// #ifdef VM_ENABLE
+//     uint64_t pAddr = vm_manager.virt_to_phys_map(src_addr);
+//     DBGPRINT("  [RT:download] Download data to vAddr = 0x%lx (pAddr=0x%lx)\n", src_addr, pAddr);
+//     src_addr = pAddr; //Overwirte
+// #endif
 
     ram_.enable_acl(false);
     ram_.read((uint8_t *)dest, src_addr, size);
@@ -283,6 +290,7 @@ public:
     return dcrs_.read(addr, value);
   }
 
+// CS259 TODO: do we need address translation here?
   int mpm_query(uint32_t addr, uint32_t core_id, uint64_t *value)
   {
     uint32_t offset = addr - VX_CSR_MPM_BASE;
@@ -298,6 +306,21 @@ public:
     *value = mpm_cache_.at(core_id).at(offset);
     return 0;
   }
+
+  #ifdef VM_ENABLE
+  int16_t set_satp(uint64_t addr) {
+    return processor_.set_satp_by_addr(addr);
+  }
+  bool is_satp_unset() {
+    return processor_.is_satp_unset();
+  }
+  uint8_t get_satp_mode() {
+    return processor_.get_satp_mode();
+  }
+  uint64_t get_base_ppn() {
+    return processor_.get_base_ppn();
+  }
+  #endif
 
 private:
   Arch arch_;
