@@ -6,3 +6,5 @@ HW_DIR := $(VORTEX_HOME)/hw
 
 INC_DIR := $(VORTEX_HOME)/runtime/include
 COMMON_DIR := $(VORTEX_HOME)/runtime/common
+
+include $(ROOT_DIR)/runtime/simx/vortex.cpp

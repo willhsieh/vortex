@@ -29,7 +29,10 @@
 
 #include <VX_config.h>
 #ifdef VM_ENABLE
-#include <mem_manager.cpp>
+  #ifndef MEM_MANAGER
+    #define MEM_MANAGER
+    #include <mem_manager.cpp>
+  #endif // MEM_MANAGER
 #endif
 
 using namespace vortex;
@@ -50,7 +53,7 @@ public:
 #ifdef VM_ENABLE
 	std::cout << "*** VM ENABLED!! ***"<< std::endl;
         // CHECK_ERR(init_VM(), );
-        vm_manager.init_VM();)
+        vm_manager.init_VM();
 #endif
     }
 

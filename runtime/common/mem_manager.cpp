@@ -20,6 +20,8 @@
 #include <chrono>
 #include <functional>
 
+#include <../simx/vortex.cpp>
+
 #ifndef VM_ENABLE
 #define VM_ENABLE
 #endif
